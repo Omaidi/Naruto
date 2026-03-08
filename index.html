@@ -1,126 +1,183 @@
 <!DOCTYPE html>
 <html lang="en">
-<html>
 <head>
-  <title>ramadan pen</title>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cyber-Core Responsive HUD</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js"></script>
   <style>
-    body { margin: 0; background: #050301; overflow: hidden; }
-    video { display: none; }
-    canvas { width: 100%; height: 100%; transform: scaleX(-1); position: absolute; z-index: 1; }
+    body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
+    #v { display: none; }
+    #c { position: absolute; width: 100%; height: 100%; object-fit: cover; }
+    /* Lapisan Overlay untuk Scanlines */
+    .overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: repeating-linear-gradient(0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1) 1px, transparent 1px, transparent 2px);
+      pointer-events: none; z-index: 5;
+    }
   </style>
 </head>
 <body>
-  <video id="vid"></video>
+  <div class="overlay"></div>
+  <video id="v" playsinline></video>
   <canvas id="c"></canvas>
+
   <script>
-    var vid = document.getElementById('vid');
-    var c = document.getElementById('c');
-    var ctx = c.getContext('2d');
-    var arr = [];
-    var cur = [];
-    var shift = false;
-    var draw = false;
-    var sx = null;
-    var sy = null;
+    const video = document.getElementById('v');
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
 
-    window.onkeydown = function(e) {
-      if (e.key == 'Shift') shift = true;
-      if (e.code == 'Space') arr = [];
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
     }
-    
-    window.onkeyup = function(e) {
-      if (e.key == 'Shift') shift = false;
-    }
+    window.addEventListener('resize', resize);
+    resize();
 
-    function run(res) {
-      c.width = window.innerWidth;
-      c.height = window.innerHeight;
-      ctx.drawImage(res.image, 0, 0, c.width, c.height);
-      ctx.fillStyle = 'rgba(10, 6, 2, 0.85)';
-      ctx.fillRect(0, 0, c.width, c.height);
+    let sparks = [];
+    let buttons = [];
+    const btnLabels = ["CORE", "NET", "BYPASS", "SYNC", "LINK", "AI"];
+    btnLabels.forEach(label => buttons.push({ label, active: false, cooldown: 0 }));
 
-      ctx.shadowColor = '#F5D061';
-      ctx.shadowBlur = 15;
-      ctx.strokeStyle = '#F5D061';
-      ctx.lineWidth = 6;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-
-      for (var i = 0; i < arr.length; i++) {
-        ctx.beginPath();
-        for (var j = 0; j < arr[i].length; j++) {
-          if (j == 0) ctx.moveTo(arr[i][j].x, arr[i][j].y);
-          else ctx.lineTo(arr[i][j].x, arr[i][j].y);
-        }
-        ctx.stroke();
-      }
-
-      if (res.multiHandLandmarks && res.multiHandLandmarks.length > 0) {
-        var lm = res.multiHandLandmarks[0];
-        drawConnectors(ctx, lm, HAND_CONNECTIONS, {color: 'rgba(245, 208, 97, 0.3)', lineWidth: 2});
-        drawLandmarks(ctx, lm, {color: '#FFFFFF', lineWidth: 1, radius: 2});
-
-        var ind = lm[8];
-        var rx = ind.x * c.width;
-        var ry = ind.y * c.height;
-
-        if (sx == null) {
-          sx = rx; 
-          sy = ry;
-        } else {
-          sx += (rx - sx) * 0.45;
-          sy += (ry - sy) * 0.45;
-        }
-
-        ctx.beginPath();
-        ctx.arc(sx, sy, 6, 0, 2 * Math.PI);
-        if (shift) { 
-          ctx.fillStyle = '#FFFFFF'; 
-        } else { 
-          ctx.fillStyle = 'rgba(245, 208, 97, 0.4)'; 
-        }
-        ctx.fill();
-
-        if (shift) {
-          if (!draw) {
-            draw = true;
-            cur = [];
-            arr.push(cur);
-          }
-          cur.push({x: sx, y: sy});
-        } else {
-          draw = false;
-        }
-      } else {
-        draw = false;
-        sx = null;
+    function createSpark(x, y) {
+      for (let i = 0; i < 15; i++) {
+        sparks.push({
+          x, y,
+          vx: (Math.random() - 0.5) * 12,
+          vy: (Math.random() - 0.5) * 12,
+          life: 1.0,
+          color: `rgb(255, ${Math.floor(Math.random() * 150)}, 0)`
+        });
       }
     }
 
-    var h = new Hands({
-      locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-      }
-    });
-    
-    h.setOptions({ 
-      maxNumHands: 1, 
-      modelComplexity: 1, 
-      minDetectionConfidence: 0.5, 
-      minTrackingConfidence: 0.5 
-    });
-    
-    h.onResults(run);
+    function drawHUD(hands, faces) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Mirror Camera
+      ctx.save();
+      ctx.scale(-1, 1);
+      ctx.translate(-canvas.width, 0);
+      ctx.globalAlpha = 0.4;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
-    var cam = new Camera(vid, {
-      onFrame: async () => { await h.send({image: vid}); },
-      width: 1280, 
-      height: 720
-    });
+      let anchorX = canvas.width / 2;
+      let anchorY = canvas.height / 2;
+
+      // Gunakan deteksi wajah sebagai pusat jika tersedia
+      if (faces && faces[0]) {
+        anchorX = ((faces[0][33].x + faces[0][263].x) / 2) * canvas.width;
+        anchorY = ((faces[0][33].y + faces[0][263].y) / 2) * canvas.height;
+      }
+
+      // 1. BRAIN AI CORE (PUSAT)
+      ctx.strokeStyle = "#0ff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(anchorX, anchorY, 40, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(0, 255, 255, 0.1)";
+      ctx.fill();
+      ctx.fillStyle = "#0ff";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("AI_CORE_ACTIVE", anchorX, anchorY - 50);
+
+      // 2. MONITOR LAYAR KODE (RESPONSIF - LEBIH KE TENGAH)
+      const mWidth = Math.min(canvas.width * 0.25, 200);
+      const mHeight = 250;
+      const m1x = anchorX - mWidth - 60; 
+      const m1y = anchorY - 125;
+
+      ctx.fillStyle = "rgba(0, 20, 0, 0.7)";
+      ctx.fillRect(m1x, m1y, mWidth, mHeight);
+      ctx.strokeStyle = "#0f0";
+      ctx.strokeRect(m1x, m1y, mWidth, mHeight);
+      ctx.fillStyle = "#0f0";
+      ctx.textAlign = "left";
+      for(let i=0; i<12; i++) {
+        ctx.fillText(">> " + Math.random().toString(36).substring(7).toUpperCase(), m1x + 10, m1y + 30 + (i * 18));
+      }
+
+      // 3. MONITOR TOMBOL (RESPONSIF - LEBIH KE TENGAH)
+      const m2x = anchorX + 60; 
+      const m2y = anchorY - 125;
+      ctx.fillStyle = "rgba(0, 20, 40, 0.7)";
+      ctx.fillRect(m2x, m2y, mWidth, mHeight);
+      ctx.strokeStyle = "#0ff";
+      ctx.strokeRect(m2x, m2y, mWidth, mHeight);
+
+      buttons.forEach((btn, i) => {
+        const bw = mWidth - 20;
+        const bh = 30;
+        const bx = m2x + 10;
+        const by = m2y + 25 + (i * 38);
+        btn.rect = { x: bx, y: by, w: bw, h: bh };
+
+        ctx.fillStyle = btn.cooldown > 0 ? "rgba(255, 100, 0, 0.6)" : "rgba(0, 255, 255, 0.2)";
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = "#fff";
+        ctx.textAlign = "center";
+        ctx.fillText(btn.label, bx + bw/2, by + 20);
+        if(btn.cooldown > 0) btn.cooldown--;
+      });
+
+      // 4. DETEKSI TANGAN & SPARK
+      if (hands) {
+        hands.forEach(hand => {
+          const index = hand[8];
+          const ix = (1 - index.x) * canvas.width;
+          const iy = index.y * canvas.height;
+
+          // Gambar Jari Digital
+          ctx.fillStyle = "#0ff";
+          hand.forEach(p => ctx.fillRect((1-p.x)*canvas.width, p.y*canvas.height, 3, 3));
+
+          buttons.forEach(btn => {
+            if (ix > btn.rect.x && ix < btn.rect.x + btn.rect.w && iy > btn.rect.y && iy < btn.rect.y + btn.rect.h) {
+              if (btn.cooldown === 0) {
+                createSpark(ix, iy);
+                btn.cooldown = 15;
+              }
+            }
+          });
+        });
+      }
+
+      // Update Sparks
+      sparks.forEach((s, i) => {
+        s.x += s.vx; s.y += s.vy; s.life -= 0.04;
+        ctx.fillStyle = s.color;
+        ctx.globalAlpha = s.life;
+        ctx.fillRect(s.x, s.y, 2, 2);
+        if(s.life <= 0) sparks.splice(i, 1);
+      });
+      ctx.globalAlpha = 1.0;
+    }
+
+    // SETUP MEDIAPIPE
+    const hands = new Hands({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.7 });
     
+    const faceMesh = new FaceMesh({locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}`});
+    faceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: true, minDetectionConfidence: 0.7 });
+
+    let cH = null, cF = null;
+    hands.onResults(res => cH = res.multiHandLandmarks);
+    faceMesh.onResults(res => cF = res.multiFaceLandmarks);
+
+    const cam = new Camera(video, {
+      onFrame: async () => {
+        await hands.send({image: video});
+        await faceMesh.send({image: video});
+        drawHUD(cH, cF);
+      },
+      width: 1280, height: 720
+    });
     cam.start();
   </script>
 </body>
